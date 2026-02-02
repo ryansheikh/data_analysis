@@ -14,7 +14,17 @@ st.set_page_config(
 # ----------------------------
 # Helpers
 # ----------------------------
-DATA_DIR_DEFAULT = os.path.join("src", "data_analysis", "data", "cleaned")
+# Absolute path based on app.py location (Streamlit-safe)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR_DEFAULT = os.path.join(BASE_DIR, "data", "cleaned")
+st.write("Resolved data path:", DATA_DIR_DEFAULT)
+st.write("Path exists:", os.path.exists(DATA_DIR_DEFAULT))
+
+if os.path.exists(DATA_DIR_DEFAULT):
+    st.write("Files found:")
+    st.write(os.listdir(DATA_DIR_DEFAULT))
+else:
+    st.error("Data directory not found")
 
 
 
@@ -428,5 +438,6 @@ elif page == "Pricing":
     fig2 = px.scatter(df2, x="AvgSellingPrice", y="TotalUnits", hover_data=["ProductName"])
     fig2.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig2, use_container_width=True)
+
 
 
