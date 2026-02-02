@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Pharmaceutical Sales Analytics Dashboard")
+st.title("Pharmevo Sales Analytics Dashboard")
 st.caption("Executive-level analytics built on aggregated SQL Server data")
 
 # ==================================================
@@ -270,5 +270,6 @@ elif page == "Dimension Drilldown":
 
     fig = px.bar(summary, x="Revenue", y="BrickName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
+
 
 
