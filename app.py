@@ -270,3 +270,4 @@ elif page == "Dimension Drilldown":
 
     fig = px.bar(summary, x="Revenue", y="BrickName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
+
