@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 # PAGE CONFIG
 # ==================================================
 st.set_page_config(
-    page_title="Pharmaceutical Sales Analytics",
+    page_title="Pharmevo Sales Analytics",
     layout="wide"
 )
 
@@ -270,4 +270,5 @@ elif page == "Dimension Drilldown":
 
     fig = px.bar(summary, x="Revenue", y="BrickName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
+
 
