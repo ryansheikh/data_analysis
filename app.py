@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("Pharmaceutical Sales Analytics Dashboard")
-st.caption("Aggregated sales insights derived from read-only SQL Server data")
+st.caption("Executive-level analytics built on aggregated SQL Server data")
 
 # ==================================================
 # DATA LOADING
@@ -81,7 +81,7 @@ data = load_data()
 # ==================================================
 # SIDEBAR
 # ==================================================
-st.sidebar.header("Dashboard Navigation")
+st.sidebar.header("Navigation")
 page = st.sidebar.radio(
     "Select View",
     [
@@ -90,7 +90,7 @@ page = st.sidebar.radio(
         "Distributor Performance",
         "Client Analysis",
         "Promotion Impact",
-        "Seasonality",
+        "Seasonality & Cycles",
         "Pricing Analysis",
         "Dimension Drilldown"
     ]
@@ -100,40 +100,45 @@ page = st.sidebar.radio(
 # EXECUTIVE OVERVIEW
 # ==================================================
 if page == "Executive Overview":
-    df = data["monthly_sales"].sort_values("MonthStart")
+    df = data["monthly_sales"].sort_values("MonthStart").copy()
+    df["MoM_Growth"] = df["TotalSales"].pct_change() * 100
+    df["Rolling_3M"] = df["TotalSales"].rolling(3).mean()
 
     latest = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else latest
 
-    # ---- KPIs ----
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Latest Month Sales", fmt(latest["TotalSales"]),
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Latest Sales", fmt(latest["TotalSales"]),
               f"{((latest['TotalSales']-prev['TotalSales'])/prev['TotalSales']*100):.2f}%" if prev["TotalSales"] else None)
-    k2.metric("Latest Units Sold", fmt(latest["TotalUnits"]))
-    k3.metric("Cumulative Sales", fmt(df["TotalSales"].sum()))
-    k4.metric("Cumulative Units", fmt(df["TotalUnits"].sum()))
+    k2.metric("Latest Units", fmt(latest["TotalUnits"]))
+    k3.metric("Avg Monthly Sales", fmt(df["TotalSales"].mean()))
+    k4.metric("Best Month Sales", fmt(df["TotalSales"].max()))
+    k5.metric("Worst Month Sales", fmt(df["TotalSales"].min()))
 
-    st.subheader("Monthly Sales Trend")
-    fig = px.line(df, x="MonthStart", y="TotalSales", markers=True)
+    st.subheader("Sales Trend with Rolling Average")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["MonthStart"], y=df["TotalSales"], name="Sales"))
+    fig.add_trace(go.Scatter(x=df["MonthStart"], y=df["Rolling_3M"], name="3M Rolling Avg"))
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Sales vs Promotions")
-    promo = data["bonus_discount_monthly"].sort_values("MonthStart")
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=df["MonthStart"], y=df["TotalSales"], name="Sales"))
-    fig2.add_trace(go.Bar(x=promo["MonthStart"], y=promo["TotalBonus"], name="Bonus", opacity=0.6))
-    fig2.add_trace(go.Bar(x=promo["MonthStart"], y=promo["TotalDiscount"], name="Discount", opacity=0.6))
-    fig2.update_layout(barmode="group")
+    st.subheader("Month-on-Month Growth")
+    fig2 = px.bar(df, x="MonthStart", y="MoM_Growth")
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
 # PRODUCT PERFORMANCE
 # ==================================================
 elif page == "Product Performance":
-    st.subheader("Top Products by Revenue")
-    top = data["top_products"].sort_values("Revenue", ascending=False).head(20)
+    top = data["top_products"].sort_values("Revenue", ascending=False)
+    total_rev = top["Revenue"].sum()
+    top["Share"] = top["Revenue"] / total_rev * 100
 
-    fig = px.bar(top, x="Revenue", y="ProductName", orientation="h")
+    k1, k2 = st.columns(2)
+    k1.metric("Top 10 Products Share", f"{top.head(10)['Share'].sum():.2f}%")
+    k2.metric("Top 20 Products Share", f"{top.head(20)['Share'].sum():.2f}%")
+
+    st.subheader("Top Products by Revenue")
+    fig = px.bar(top.head(20), x="Revenue", y="ProductName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Product Revenue Trend")
@@ -156,18 +161,17 @@ elif page == "Product Performance":
 # ==================================================
 elif page == "Distributor Performance":
     dist = data["distributor_performance"].sort_values("Revenue", ascending=False)
+    dist["Share"] = dist["Revenue"] / dist["Revenue"].sum() * 100
+    dist["CumShare"] = dist["Share"].cumsum()
 
     st.subheader("Top Distributors")
     fig = px.bar(dist.head(30), x="Revenue", y="DistributorName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Revenue Concentration (Pareto)")
-    dist["Share"] = dist["Revenue"] / dist["Revenue"].sum()
-    dist["CumulativeShare"] = dist["Share"].cumsum()
-
+    st.subheader("Distributor Revenue Concentration")
     fig2 = go.Figure()
     fig2.add_trace(go.Bar(y=dist["Share"], name="Revenue Share"))
-    fig2.add_trace(go.Scatter(y=dist["CumulativeShare"], name="Cumulative Share"))
+    fig2.add_trace(go.Scatter(y=dist["CumShare"], name="Cumulative Share"))
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
@@ -176,11 +180,13 @@ elif page == "Distributor Performance":
 elif page == "Client Analysis":
     ct = data["client_type_analysis"]
 
-    st.subheader("Revenue Share by Client Type")
+    k1, k2 = st.columns(2)
+    k1.metric("Total Client Types", ct["ClientType"].nunique())
+    k2.metric("Highest Revenue Client Type", ct.sort_values("Revenue", ascending=False).iloc[0]["ClientType"])
+
     fig = px.pie(ct, names="ClientType", values="Revenue")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Client Type Trend")
     mct = data["monthly_client_type_sales"]
     fig2 = px.line(mct, x="MonthStart", y="Revenue", color="ClientType", markers=True)
     st.plotly_chart(fig2, use_container_width=True)
@@ -190,41 +196,35 @@ elif page == "Client Analysis":
 # ==================================================
 elif page == "Promotion Impact":
     promo = data["bonus_discount_monthly"]
+    sales = data["monthly_sales"][["MonthStart", "TotalSales"]]
 
-    st.subheader("Bonus & Discount Trend")
-    fig = px.line(
-        promo,
-        x="MonthStart",
-        y=["TotalBonus", "TotalDiscount"],
-        markers=True
-    )
+    merged = promo.merge(sales, on="MonthStart")
+    merged["Promo_Total"] = merged["TotalBonus"] + merged["TotalDiscount"]
+
+    k1, k2 = st.columns(2)
+    k1.metric("Avg Monthly Promotion", fmt(merged["Promo_Total"].mean()))
+    k2.metric("Promotion to Sales Ratio",
+              f"{(merged['Promo_Total'].sum()/merged['TotalSales'].sum())*100:.2f}%")
+
+    fig = px.line(merged, x="MonthStart", y=["TotalBonus", "TotalDiscount"], markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Promotion vs Sales Correlation")
-    merged = pd.merge(
-        data["monthly_sales"][["MonthStart", "TotalSales"]],
-        promo,
-        on="MonthStart"
-    )
-    merged["TotalPromotion"] = merged["TotalBonus"] + merged["TotalDiscount"]
-
-    fig2 = px.scatter(
-        merged,
-        x="TotalPromotion",
-        y="TotalSales",
-        trendline="ols"
-    )
+    fig2 = px.scatter(merged, x="Promo_Total", y="TotalSales", trendline="ols")
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
-# SEASONALITY
+# SEASONALITY & CYCLES
 # ==================================================
-elif page == "Seasonality":
+elif page == "Seasonality & Cycles":
     sea = data["seasonality_monthly_avg"]
 
-    st.subheader("Seasonality Profile")
     fig = px.bar(sea, x="Month", y="AvgMonthlySales")
     st.plotly_chart(fig, use_container_width=True)
+
+    df = data["monthly_sales"]
+    heat = df.pivot_table(index="Year", columns="Month", values="TotalSales", aggfunc="sum")
+    fig2 = px.imshow(heat, aspect="auto")
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
 # PRICING ANALYSIS
@@ -232,7 +232,6 @@ elif page == "Seasonality":
 elif page == "Pricing Analysis":
     price = data["price_sensitivity"]
 
-    st.subheader("Average Selling Price by Product")
     fig = px.bar(
         price.sort_values("AvgSellingPrice", ascending=False).head(30),
         x="AvgSellingPrice",
@@ -241,13 +240,8 @@ elif page == "Pricing Analysis":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Price vs Volume")
-    fig2 = px.scatter(
-        price,
-        x="AvgSellingPrice",
-        y="TotalUnits",
-        hover_data=["ProductName"]
-    )
+    fig2 = px.scatter(price, x="AvgSellingPrice", y="TotalUnits",
+                      hover_data=["ProductName"])
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
@@ -256,20 +250,23 @@ elif page == "Pricing Analysis":
 elif page == "Dimension Drilldown":
     dim = data["dimension_summary"]
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         distributor = st.selectbox("Distributor", ["All"] + sorted(dim["DistributorName"].unique()))
     with c2:
         client_type = st.selectbox("Client Type", ["All"] + sorted(dim["ClientType"].unique()))
+    with c3:
+        team = st.selectbox("Team", ["All"] + sorted(dim["TeamName"].unique()))
 
     df = dim.copy()
     if distributor != "All":
         df = df[df["DistributorName"] == distributor]
     if client_type != "All":
         df = df[df["ClientType"] == client_type]
+    if team != "All":
+        df = df[df["TeamName"] == team]
 
-    summary = df.groupby("TeamName", as_index=False)["Revenue"].sum()
+    summary = df.groupby("BrickName", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
 
-    fig = px.bar(summary.sort_values("Revenue", ascending=False),
-                 x="Revenue", y="TeamName", orientation="h")
+    fig = px.bar(summary, x="Revenue", y="BrickName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
