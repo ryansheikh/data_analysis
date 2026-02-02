@@ -5,19 +5,21 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-# --------------------------------------------------
-# Streamlit Configuration
-# --------------------------------------------------
+# ==================================================
+# PAGE CONFIG
+# ==================================================
 st.set_page_config(
-    page_title="Pharma Sales Analytics Dashboard",
+    page_title="Pharmaceutical Sales Analytics",
     layout="wide"
 )
 
-# --------------------------------------------------
-# Data Location (CSV files are in repo ROOT)
-# --------------------------------------------------
+st.title("Pharmaceutical Sales Analytics Dashboard")
+st.caption("Aggregated sales insights derived from read-only SQL Server data")
+
+# ==================================================
+# DATA LOADING
+# ==================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = BASE_DIR
 
 FILE_MAP = {
     "monthly_sales": "cleaned_monthly_sales.csv",
@@ -30,9 +32,6 @@ FILE_MAP = {
     "monthly_client_type_sales": "cleaned_monthly_client_type_sales.csv",
     "price_sensitivity": "cleaned_price_sensitivity.csv",
     "seasonality_monthly_avg": "cleaned_seasonality_monthly_avg.csv",
-    "monthly_sales_growth_base": "cleaned_monthly_sales_growth_base.csv",
-    "product_monthly_units": "cleaned_product_monthly_units.csv",
-    "product_avg_price": "cleaned_product_avg_price.csv",
 }
 
 NUMERIC_COLUMNS = {
@@ -41,249 +40,236 @@ NUMERIC_COLUMNS = {
     "AvgSellingPrice", "AvgMonthlySales"
 }
 
-# --------------------------------------------------
-# Load Data
-# --------------------------------------------------
 @st.cache_data
-def load_all_data():
-    datasets = {}
-
-    for key, filename in FILE_MAP.items():
-        path = os.path.join(DATA_DIR, filename)
-
+def load_data():
+    data = {}
+    for key, fname in FILE_MAP.items():
+        path = os.path.join(BASE_DIR, fname)
         if not os.path.exists(path):
-            st.error(f"Required dataset not found: {filename}")
+            st.error(f"Missing dataset: {fname}")
             st.stop()
 
         df = pd.read_csv(path)
 
-        # Fix numeric columns
         for col in df.columns:
             if col in NUMERIC_COLUMNS:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-        # Create MonthStart if possible
         if "Year" in df.columns and "Month" in df.columns:
             df["MonthStart"] = pd.to_datetime(
-                df["Year"].astype(str) + "-" + df["Month"].astype(str) + "-01",
-                errors="coerce"
+                df["Year"].astype(str) + "-" + df["Month"].astype(str) + "-01"
             )
 
-        datasets[key] = df
+        data[key] = df
 
-    return datasets
-
-
-def format_number(value):
-    value = float(value)
-    if abs(value) >= 1e9:
-        return f"{value / 1e9:.2f}B"
-    if abs(value) >= 1e6:
-        return f"{value / 1e6:.2f}M"
-    if abs(value) >= 1e3:
-        return f"{value / 1e3:.2f}K"
-    return f"{value:,.0f}"
+    return data
 
 
-# --------------------------------------------------
-# Load datasets
-# --------------------------------------------------
-data = load_all_data()
+def fmt(x):
+    x = float(x)
+    if abs(x) >= 1e9:
+        return f"{x/1e9:.2f}B"
+    if abs(x) >= 1e6:
+        return f"{x/1e6:.2f}M"
+    if abs(x) >= 1e3:
+        return f"{x/1e3:.2f}K"
+    return f"{x:,.0f}"
 
-# --------------------------------------------------
-# Sidebar Navigation
-# --------------------------------------------------
-st.sidebar.title("Navigation")
+
+data = load_data()
+
+# ==================================================
+# SIDEBAR
+# ==================================================
+st.sidebar.header("Dashboard Navigation")
 page = st.sidebar.radio(
-    "Select Section",
+    "Select View",
     [
         "Executive Overview",
-        "Product Analysis",
-        "Distributor Analysis",
-        "Client Type Analysis",
-        "Promotions Analysis",
+        "Product Performance",
+        "Distributor Performance",
+        "Client Analysis",
+        "Promotion Impact",
         "Seasonality",
-        "Pricing",
-        "Dimension Explorer",
+        "Pricing Analysis",
+        "Dimension Drilldown"
     ]
 )
 
-# --------------------------------------------------
-# Executive Overview
-# --------------------------------------------------
+# ==================================================
+# EXECUTIVE OVERVIEW
+# ==================================================
 if page == "Executive Overview":
     df = data["monthly_sales"].sort_values("MonthStart")
 
     latest = df.iloc[-1]
     prev = df.iloc[-2] if len(df) > 1 else latest
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "Latest Month Sales",
-        format_number(latest["TotalSales"]),
-        f"{((latest['TotalSales'] - prev['TotalSales']) / prev['TotalSales'] * 100):.2f}%" if prev["TotalSales"] != 0 else None
-    )
-    c2.metric("Latest Month Units", format_number(latest["TotalUnits"]))
-    c3.metric("Total Sales", format_number(df["TotalSales"].sum()))
-    c4.metric("Total Units", format_number(df["TotalUnits"].sum()))
+    # ---- KPIs ----
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Latest Month Sales", fmt(latest["TotalSales"]),
+              f"{((latest['TotalSales']-prev['TotalSales'])/prev['TotalSales']*100):.2f}%" if prev["TotalSales"] else None)
+    k2.metric("Latest Units Sold", fmt(latest["TotalUnits"]))
+    k3.metric("Cumulative Sales", fmt(df["TotalSales"].sum()))
+    k4.metric("Cumulative Units", fmt(df["TotalUnits"].sum()))
 
-    fig = px.line(
-        df,
-        x="MonthStart",
-        y="TotalSales",
-        title="Monthly Sales Trend"
-    )
+    st.subheader("Monthly Sales Trend")
+    fig = px.line(df, x="MonthStart", y="TotalSales", markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
-# --------------------------------------------------
-# Product Analysis
-# --------------------------------------------------
-elif page == "Product Analysis":
+    st.subheader("Sales vs Promotions")
+    promo = data["bonus_discount_monthly"].sort_values("MonthStart")
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=df["MonthStart"], y=df["TotalSales"], name="Sales"))
+    fig2.add_trace(go.Bar(x=promo["MonthStart"], y=promo["TotalBonus"], name="Bonus", opacity=0.6))
+    fig2.add_trace(go.Bar(x=promo["MonthStart"], y=promo["TotalDiscount"], name="Discount", opacity=0.6))
+    fig2.update_layout(barmode="group")
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ==================================================
+# PRODUCT PERFORMANCE
+# ==================================================
+elif page == "Product Performance":
+    st.subheader("Top Products by Revenue")
     top = data["top_products"].sort_values("Revenue", ascending=False).head(20)
 
-    fig = px.bar(
-        top,
-        x="Revenue",
-        y="ProductName",
-        orientation="h",
-        title="Top Products by Revenue"
-    )
+    fig = px.bar(top, x="Revenue", y="ProductName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
 
+    st.subheader("Product Revenue Trend")
     mps = data["monthly_product_sales"]
     products = sorted(mps["ProductName"].unique())
+    selected = st.multiselect("Select Products", products, default=products[:1])
 
-    selected_products = st.multiselect(
-        "Select product(s)",
-        products,
-        default=products[:1]
-    )
-
-    if selected_products:
+    if selected:
         fig2 = px.line(
-            mps[mps["ProductName"].isin(selected_products)],
+            mps[mps["ProductName"].isin(selected)],
             x="MonthStart",
             y="Revenue",
             color="ProductName",
-            title="Product Revenue Trend"
+            markers=True
         )
         st.plotly_chart(fig2, use_container_width=True)
 
-# --------------------------------------------------
-# Distributor Analysis
-# --------------------------------------------------
-elif page == "Distributor Analysis":
-    dist = data["distributor_performance"].sort_values("Revenue", ascending=False).head(30)
+# ==================================================
+# DISTRIBUTOR PERFORMANCE
+# ==================================================
+elif page == "Distributor Performance":
+    dist = data["distributor_performance"].sort_values("Revenue", ascending=False)
 
-    fig = px.bar(
-        dist,
-        x="Revenue",
-        y="DistributorName",
-        orientation="h",
-        title="Top Distributors by Revenue"
-    )
+    st.subheader("Top Distributors")
+    fig = px.bar(dist.head(30), x="Revenue", y="DistributorName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
 
-# --------------------------------------------------
-# Client Type Analysis
-# --------------------------------------------------
-elif page == "Client Type Analysis":
+    st.subheader("Revenue Concentration (Pareto)")
+    dist["Share"] = dist["Revenue"] / dist["Revenue"].sum()
+    dist["CumulativeShare"] = dist["Share"].cumsum()
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(y=dist["Share"], name="Revenue Share"))
+    fig2.add_trace(go.Scatter(y=dist["CumulativeShare"], name="Cumulative Share"))
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ==================================================
+# CLIENT ANALYSIS
+# ==================================================
+elif page == "Client Analysis":
     ct = data["client_type_analysis"]
 
-    fig = px.pie(
-        ct,
-        names="ClientType",
-        values="Revenue",
-        title="Revenue Share by Client Type"
+    st.subheader("Revenue Share by Client Type")
+    fig = px.pie(ct, names="ClientType", values="Revenue")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Client Type Trend")
+    mct = data["monthly_client_type_sales"]
+    fig2 = px.line(mct, x="MonthStart", y="Revenue", color="ClientType", markers=True)
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ==================================================
+# PROMOTION IMPACT
+# ==================================================
+elif page == "Promotion Impact":
+    promo = data["bonus_discount_monthly"]
+
+    st.subheader("Bonus & Discount Trend")
+    fig = px.line(
+        promo,
+        x="MonthStart",
+        y=["TotalBonus", "TotalDiscount"],
+        markers=True
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    mct = data["monthly_client_type_sales"]
-    fig2 = px.line(
-        mct,
-        x="MonthStart",
-        y="Revenue",
-        color="ClientType",
-        title="Client Type Revenue Trend"
+    st.subheader("Promotion vs Sales Correlation")
+    merged = pd.merge(
+        data["monthly_sales"][["MonthStart", "TotalSales"]],
+        promo,
+        on="MonthStart"
+    )
+    merged["TotalPromotion"] = merged["TotalBonus"] + merged["TotalDiscount"]
+
+    fig2 = px.scatter(
+        merged,
+        x="TotalPromotion",
+        y="TotalSales",
+        trendline="ols"
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-# --------------------------------------------------
-# Promotions Analysis
-# --------------------------------------------------
-elif page == "Promotions Analysis":
-    promo = data["bonus_discount_monthly"]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=promo["MonthStart"], y=promo["TotalBonus"], name="Bonus"))
-    fig.add_trace(go.Scatter(x=promo["MonthStart"], y=promo["TotalDiscount"], name="Discount"))
-
-    fig.update_layout(title="Bonus and Discount Trend Over Time")
-    st.plotly_chart(fig, use_container_width=True)
-
-# --------------------------------------------------
-# Seasonality
-# --------------------------------------------------
+# ==================================================
+# SEASONALITY
+# ==================================================
 elif page == "Seasonality":
     sea = data["seasonality_monthly_avg"]
 
-    fig = px.bar(
-        sea,
-        x="Month",
-        y="AvgMonthlySales",
-        title="Average Monthly Sales (Seasonality)"
-    )
+    st.subheader("Seasonality Profile")
+    fig = px.bar(sea, x="Month", y="AvgMonthlySales")
     st.plotly_chart(fig, use_container_width=True)
 
-# --------------------------------------------------
-# Pricing
-# --------------------------------------------------
-elif page == "Pricing":
-    price = data["price_sensitivity"].sort_values("AvgSellingPrice", ascending=False).head(30)
+# ==================================================
+# PRICING ANALYSIS
+# ==================================================
+elif page == "Pricing Analysis":
+    price = data["price_sensitivity"]
 
+    st.subheader("Average Selling Price by Product")
     fig = px.bar(
-        price,
+        price.sort_values("AvgSellingPrice", ascending=False).head(30),
         x="AvgSellingPrice",
         y="ProductName",
-        orientation="h",
-        title="Average Selling Price by Product"
+        orientation="h"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# --------------------------------------------------
-# Dimension Explorer
-# --------------------------------------------------
-elif page == "Dimension Explorer":
+    st.subheader("Price vs Volume")
+    fig2 = px.scatter(
+        price,
+        x="AvgSellingPrice",
+        y="TotalUnits",
+        hover_data=["ProductName"]
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+
+# ==================================================
+# DIMENSION DRILLDOWN
+# ==================================================
+elif page == "Dimension Drilldown":
     dim = data["dimension_summary"]
 
-    distributor = st.selectbox(
-        "Distributor",
-        ["All"] + sorted(dim["DistributorName"].unique())
-    )
+    c1, c2 = st.columns(2)
+    with c1:
+        distributor = st.selectbox("Distributor", ["All"] + sorted(dim["DistributorName"].unique()))
+    with c2:
+        client_type = st.selectbox("Client Type", ["All"] + sorted(dim["ClientType"].unique()))
 
-    client_type = st.selectbox(
-        "Client Type",
-        ["All"] + sorted(dim["ClientType"].unique())
-    )
-
-    filtered = dim.copy()
+    df = dim.copy()
     if distributor != "All":
-        filtered = filtered[filtered["DistributorName"] == distributor]
+        df = df[df["DistributorName"] == distributor]
     if client_type != "All":
-        filtered = filtered[filtered["ClientType"] == client_type]
+        df = df[df["ClientType"] == client_type]
 
-    summary = (
-        filtered
-        .groupby("TeamName", as_index=False)["Revenue"]
-        .sum()
-        .sort_values("Revenue", ascending=False)
-    )
+    summary = df.groupby("TeamName", as_index=False)["Revenue"].sum()
 
-    fig = px.bar(
-        summary,
-        x="Revenue",
-        y="TeamName",
-        orientation="h",
-        title="Revenue by Team"
-    )
+    fig = px.bar(summary.sort_values("Revenue", ascending=False),
+                 x="Revenue", y="TeamName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
