@@ -14,7 +14,7 @@ st.set_page_config(
 # ----------------------------
 # Helpers
 # ----------------------------
-DATA_DIR_DEFAULT = os.path.join("data_analysis", "data", "cleaned")
+DATA_DIR_DEFAULT = os.path.join("src", "data_analysis", "data", "cleaned")
 
 
 
@@ -428,4 +428,5 @@ elif page == "Pricing":
     fig2 = px.scatter(df2, x="AvgSellingPrice", y="TotalUnits", hover_data=["ProductName"])
     fig2.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig2, use_container_width=True)
+
 
