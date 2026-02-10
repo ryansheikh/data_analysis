@@ -17,6 +17,16 @@ st.title("Pharmevo Sales Analytics Dashboard")
 st.caption("Executive-level analytics built on aggregated SQL Server data")
 
 # ==================================================
+# CACHE CONTROL (🔥 FIX)
+# ==================================================
+if st.sidebar.button("🔄 Refresh Data (Clear Cache)"):
+    st.cache_data.clear()
+    st.rerun()
+
+def file_signature(path):
+    return os.path.getmtime(path)
+
+# ==================================================
 # DATA LOADING
 # ==================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,8 +50,11 @@ NUMERIC_COLUMNS = {
     "AvgSellingPrice", "AvgMonthlySales"
 }
 
+# create file signature so cache auto-refreshes when CSV updates
+sig = tuple(file_signature(os.path.join(BASE_DIR, f)) for f in FILE_MAP.values())
+
 @st.cache_data
-def load_data():
+def load_data(sig):
     data = {}
     for key, fname in FILE_MAP.items():
         path = os.path.join(BASE_DIR, fname)
@@ -64,19 +77,7 @@ def load_data():
 
     return data
 
-
-def fmt(x):
-    x = float(x)
-    if abs(x) >= 1e9:
-        return f"{x/1e9:.2f}B"
-    if abs(x) >= 1e6:
-        return f"{x/1e6:.2f}M"
-    if abs(x) >= 1e3:
-        return f"{x/1e3:.2f}K"
-    return f"{x:,.0f}"
-
-
-data = load_data()
+data = load_data(sig)
 
 # ==================================================
 # SIDEBAR
@@ -108,12 +109,16 @@ if page == "Executive Overview":
     prev = df.iloc[-2] if len(df) > 1 else latest
 
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Latest Sales", fmt(latest["TotalSales"]),
-              f"{((latest['TotalSales']-prev['TotalSales'])/prev['TotalSales']*100):.2f}%" if prev["TotalSales"] else None)
-    k2.metric("Latest Units", fmt(latest["TotalUnits"]))
-    k3.metric("Avg Monthly Sales", fmt(df["TotalSales"].mean()))
-    k4.metric("Best Month Sales", fmt(df["TotalSales"].max()))
-    k5.metric("Worst Month Sales", fmt(df["TotalSales"].min()))
+    k1.metric(
+        "Latest Sales",
+        latest["TotalSales"],
+        f"{((latest['TotalSales']-prev['TotalSales'])/prev['TotalSales']*100):.2f}%"
+        if prev["TotalSales"] else None
+    )
+    k2.metric("Latest Units", latest["TotalUnits"])
+    k3.metric("Avg Monthly Sales", df["TotalSales"].mean())
+    k4.metric("Best Month Sales", df["TotalSales"].max())
+    k5.metric("Worst Month Sales", df["TotalSales"].min())
 
     st.subheader("Sales Trend with Rolling Average")
     fig = go.Figure()
@@ -182,7 +187,10 @@ elif page == "Client Analysis":
 
     k1, k2 = st.columns(2)
     k1.metric("Total Client Types", ct["ClientType"].nunique())
-    k2.metric("Highest Revenue Client Type", ct.sort_values("Revenue", ascending=False).iloc[0]["ClientType"])
+    k2.metric(
+        "Highest Revenue Client Type",
+        ct.sort_values("Revenue", ascending=False).iloc[0]["ClientType"]
+    )
 
     fig = px.pie(ct, names="ClientType", values="Revenue")
     st.plotly_chart(fig, use_container_width=True)
@@ -202,14 +210,21 @@ elif page == "Promotion Impact":
     merged["Promo_Total"] = merged["TotalBonus"] + merged["TotalDiscount"]
 
     k1, k2 = st.columns(2)
-    k1.metric("Avg Monthly Promotion", fmt(merged["Promo_Total"].mean()))
-    k2.metric("Promotion to Sales Ratio",
-              f"{(merged['Promo_Total'].sum()/merged['TotalSales'].sum())*100:.2f}%")
+    k1.metric("Avg Monthly Promotion", merged["Promo_Total"].mean())
+    k2.metric(
+        "Promotion to Sales Ratio",
+        f"{(merged['Promo_Total'].sum()/merged['TotalSales'].sum())*100:.2f}%"
+    )
 
-    fig = px.line(merged, x="MonthStart", y=["TotalBonus", "TotalDiscount"], markers=True)
+    fig = px.line(
+        merged,
+        x="MonthStart",
+        y=["TotalBonus", "TotalDiscount"],
+        markers=True
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-    fig2 = px.scatter(merged, x="Promo_Total", y="TotalSales", trendline="ols")
+    fig2 = px.scatter(merged, x="Promo_Total", y="TotalSales")
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
@@ -222,7 +237,9 @@ elif page == "Seasonality & Cycles":
     st.plotly_chart(fig, use_container_width=True)
 
     df = data["monthly_sales"]
-    heat = df.pivot_table(index="Year", columns="Month", values="TotalSales", aggfunc="sum")
+    heat = df.pivot_table(
+        index="Year", columns="Month", values="TotalSales", aggfunc="sum"
+    )
     fig2 = px.imshow(heat, aspect="auto")
     st.plotly_chart(fig2, use_container_width=True)
 
@@ -240,8 +257,12 @@ elif page == "Pricing Analysis":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    fig2 = px.scatter(price, x="AvgSellingPrice", y="TotalUnits",
-                      hover_data=["ProductName"])
+    fig2 = px.scatter(
+        price,
+        x="AvgSellingPrice",
+        y="TotalUnits",
+        hover_data=["ProductName"]
+    )
     st.plotly_chart(fig2, use_container_width=True)
 
 # ==================================================
@@ -252,11 +273,17 @@ elif page == "Dimension Drilldown":
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        distributor = st.selectbox("Distributor", ["All"] + sorted(dim["DistributorName"].unique()))
+        distributor = st.selectbox(
+            "Distributor", ["All"] + sorted(dim["DistributorName"].unique())
+        )
     with c2:
-        client_type = st.selectbox("Client Type", ["All"] + sorted(dim["ClientType"].unique()))
+        client_type = st.selectbox(
+            "Client Type", ["All"] + sorted(dim["ClientType"].unique())
+        )
     with c3:
-        team = st.selectbox("Team", ["All"] + sorted(dim["TeamName"].unique()))
+        team = st.selectbox(
+            "Team", ["All"] + sorted(dim["TeamName"].unique())
+        )
 
     df = dim.copy()
     if distributor != "All":
@@ -266,10 +293,11 @@ elif page == "Dimension Drilldown":
     if team != "All":
         df = df[df["TeamName"] == team]
 
-    summary = df.groupby("BrickName", as_index=False)["Revenue"].sum().sort_values("Revenue", ascending=False)
+    summary = (
+        df.groupby("BrickName", as_index=False)["Revenue"]
+        .sum()
+        .sort_values("Revenue", ascending=False)
+    )
 
     fig = px.bar(summary, x="Revenue", y="BrickName", orientation="h")
     st.plotly_chart(fig, use_container_width=True)
-
-
-
